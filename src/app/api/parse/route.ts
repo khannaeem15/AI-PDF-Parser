@@ -4,9 +4,12 @@ import { writeFile, mkdir, readFile, rm } from "fs/promises";
 import path from "path";
 import os from "os";
 
-// We injected our downloaded Java into our local workspace path
-const JAVA_BIN_PATH = "C:\\Users\\n.gull\\Documents\\PDFParser\\java\\jdk-21.0.10+7\\bin";
-process.env.PATH = `${JAVA_BIN_PATH};${process.env.PATH}`;
+if (os.platform() === "win32") {
+  // We injected our downloaded Java into our local workspace path
+  const JAVA_BIN_PATH = "C:\\Users\\n.gull\\Documents\\PDFParser\\java\\jdk-21.0.10+7\\bin";
+  process.env.PATH = `${JAVA_BIN_PATH};${process.env.PATH}`;
+}
+// On Hugging Face (Linux), Java is installed globally by Docker, so no PATH changes are needed.
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
