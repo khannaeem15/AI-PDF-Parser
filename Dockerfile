@@ -4,8 +4,8 @@ FROM node:22-bookworm
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=7860
-# Hugging Face enforces running as user 1000
-RUN useradd -m -u 1000 user
+# The 'node' image already comes with a non-root user named 'node' at UID 1000, 
+# which perfectly satisfies Hugging Face's requirements!
 
 # Install System Dependencies: Java 17+ and Python 3.10+
 RUN apt-get update && apt-get install -y \
@@ -29,18 +29,18 @@ RUN pip install --no-cache-dir "opendataloader-pdf[hybrid]"
 # Set working directory
 WORKDIR /app
 
-# Switch to the non-root user required by Hugging Face Spaces
-RUN chown -R user:user /app
-USER user
+# Switch to the non-root 'node' user required by Hugging Face Spaces
+RUN chown -R node:node /app
+USER node
 
 # Copy Next.js package files
-COPY --chown=user:user package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 
 # Install Node dependencies
 RUN npm ci
 
 # Copy the rest of the application
-COPY --chown=user:user . .
+COPY --chown=node:node . .
 
 # Build the Next.js application
 RUN npm run build
