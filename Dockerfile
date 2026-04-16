@@ -1,5 +1,5 @@
-# Use an official Node.js runtime as a parent image (Bullseye has standard glibc required by Python/Java)
-FROM node:22-bullseye
+# Use an official Node.js runtime as a parent image (Bookworm guarantees Python 3.11+)
+FROM node:22-bookworm
 
 # Set environment variables
 ENV NODE_ENV=production
