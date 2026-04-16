@@ -42,6 +42,10 @@ RUN npm ci
 # Copy the rest of the application
 COPY --chown=node:node . .
 
+# Limit Node memory to avoid OOM killer during massive SWC minification sweeps
+ENV NODE_OPTIONS="--max-old-space-size=3072"
+ENV NEXT_TELEMETRY_DISABLED=1
+
 # Build the Next.js application
 RUN npm run build
 
