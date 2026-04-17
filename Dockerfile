@@ -4,10 +4,8 @@ FROM node:22-bookworm
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=7860
-# The 'node' image already comes with a non-root user named 'node' at UID 1000, 
-# which perfectly satisfies Hugging Face's requirements!
 
-# Install System Dependencies: Java 17+ and Python 3.10+
+# ── Step 1: System dependencies (Java + Python) ──────────────────────────────
 RUN apt-get update && apt-get install -y \
     openjdk-17-jre-headless \
     python3 \
@@ -18,61 +16,60 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up Python virtual environment to avoid PIP externally-managed errors
+# ── Step 2: Python venv + heavy AI library ───────────────────────────────────
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install the Python Library (Heavy AI Models)
-# Note: In production, we install it globally within the venv
 RUN pip install --no-cache-dir "opendataloader-pdf[hybrid]"
 
-# Set working directory
+# ── Step 3: Node.js app ──────────────────────────────────────────────────────
 WORKDIR /app
 
-# Switch to the non-root 'node' user required by Hugging Face Spaces
-RUN chown -R node:node /app
-USER node
+# Copy manifests first (layer-cache friendly)
+COPY package.json package-lock.json ./
 
-# Copy Next.js package files
-COPY --chown=node:node package.json package-lock.json ./
+# Install Node dependencies (strict mode — requires lock file to be in sync)
+RUN npm ci --prefer-offline
 
-# Install Node dependencies
-RUN npm ci
+# Copy the rest of the application source
+COPY . .
 
-# Copy the rest of the application
-COPY --chown=node:node . .
-
-# Limit Node memory to avoid OOM killer during massive SWC minification sweeps
+# Build the Next.js standalone bundle
 ENV NODE_OPTIONS="--max-old-space-size=3072"
 ENV NEXT_TELEMETRY_DISABLED=1
-
-# Build the Next.js application
 RUN npm run build
 
-# Create a master startup script that launches both the Python AI server and the Node server
-RUN echo '#!/bin/bash\n\
-echo "Starting AI Hybrid Server on Port 5002..."\n\
-opendataloader-pdf-hybrid --port 5002 &\n\
-echo "Waiting for AI Server to boot..."\n\
-sleep 5\n\
-echo "Starting Next.js Server on Port 7860..."\n\
-HOSTNAME="0.0.0.0" node server.js\n\
-' > start.sh
-
-RUN chmod +x start.sh
-
-# Expose the Hugging Face port
-EXPOSE 7860
-
-# We use the standalone build folder from `.next/standalone`
-WORKDIR /app/.next/standalone
-
+# ── Step 4: Assemble the standalone runtime directory ────────────────────────
 # Copy static assets into the standalone directory so client-side React works
 RUN cp -r /app/.next/static /app/.next/standalone/.next/static
 RUN cp -r /app/public /app/.next/standalone/public 2>/dev/null || true
 
-# Copy the start script to the standalone dir
-RUN cp /app/start.sh /app/.next/standalone/start.sh
+# ── Step 5: Create the startup script ────────────────────────────────────────
+# IMPORTANT: Use printf (not echo) so that \n expands into real newlines.
+#            The venv is referenced by absolute path to guarantee it is found
+#            even if PATH is not fully inherited at CMD runtime.
+RUN printf '#!/bin/bash\n\
+set -e\n\
+echo "==> Starting AI Hybrid Server on port 5002..."\n\
+/opt/venv/bin/opendataloader-pdf-hybrid --port 5002 &\n\
+echo "==> Waiting for AI server to initialise (15 s)..."\n\
+sleep 15\n\
+echo "==> Starting Next.js on port 7860..."\n\
+cd /app/.next/standalone\n\
+exec env HOSTNAME="0.0.0.0" PORT=7860 node server.js\n' \
+    > /start.sh && chmod +x /start.sh
 
-# Start both servers
-CMD ["./start.sh"]
+# ── Step 6: Hand off ownership to the non-root user ──────────────────────────
+# The 'node' image ships with a 'node' user at UID 1000 — exactly what
+# Hugging Face Spaces requires.
+RUN chown -R node:node /app /opt/venv /start.sh
+
+USER node
+
+# Expose the Hugging Face port
+EXPOSE 7860
+
+WORKDIR /app/.next/standalone
+
+# Launch both servers via bash so the shebang line is honoured
+CMD ["bash", "/start.sh"]
