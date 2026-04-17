@@ -28,8 +28,8 @@ WORKDIR /app
 # Copy manifests first (layer-cache friendly)
 COPY package.json package-lock.json ./
 
-# Install Node dependencies (strict mode — requires lock file to be in sync)
-RUN npm ci --prefer-offline
+# Install Node dependencies
+RUN npm ci
 
 # Copy the rest of the application source
 COPY . .
@@ -39,15 +39,22 @@ ENV NODE_OPTIONS="--max-old-space-size=3072"
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
+# Guard: fail fast if standalone output was not produced.
+# This catches cases where next.config.js output:"standalone" was not applied.
+RUN test -d /app/.next/standalone || \
+    (echo "ERROR: /app/.next/standalone not found after build. Ensure next.config.js has output:'standalone' and is a plain .js file." && exit 1)
+
 # ── Step 4: Assemble the standalone runtime directory ────────────────────────
-# Copy static assets into the standalone directory so client-side React works
+# Ensure the .next sub-directory exists inside standalone before we copy into it
+RUN mkdir -p /app/.next/standalone/.next
+
+# Copy static assets so client-side React works
 RUN cp -r /app/.next/static /app/.next/standalone/.next/static
 RUN cp -r /app/public /app/.next/standalone/public 2>/dev/null || true
 
 # ── Step 5: Create the startup script ────────────────────────────────────────
-# IMPORTANT: Use printf (not echo) so that \n expands into real newlines.
-#            The venv is referenced by absolute path to guarantee it is found
-#            even if PATH is not fully inherited at CMD runtime.
+# Use printf (not echo) so \n expands into real newlines.
+# Reference the venv by absolute path so it is found at runtime.
 RUN printf '#!/bin/bash\n\
 set -e\n\
 echo "==> Starting AI Hybrid Server on port 5002..."\n\
@@ -60,8 +67,7 @@ exec env HOSTNAME="0.0.0.0" PORT=7860 node server.js\n' \
     > /start.sh && chmod +x /start.sh
 
 # ── Step 6: Hand off ownership to the non-root user ──────────────────────────
-# The 'node' image ships with a 'node' user at UID 1000 — exactly what
-# Hugging Face Spaces requires.
+# The 'node' image ships with a 'node' user at UID 1000 — required by HF Spaces
 RUN chown -R node:node /app /opt/venv /start.sh
 
 USER node
