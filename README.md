@@ -9,6 +9,8 @@ pinned: false
 ---
 
 # Intelligent AI PDF Parser 🚀
+Checkout here
+https://huggingface.co/spaces/naakhan/AI-PDF-Parser 
 
 **An advanced, dual-engine full-stack PDF parser.** Built on top of the highly-rated OpenDataLoader project, it combines blazing-fast Java deterministic analysis with PyTorch-powered AI Vision Models (Docling) to precisely extract Text, Markdown, structured Tables, and JSON metadata (with coordinate bounding-boxes) from both digital and scanned PDFs. 
 
